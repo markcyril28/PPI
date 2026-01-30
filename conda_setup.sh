@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mamba install -c conda-forge \
+  numpy \
+  pandas \
+  matplotlib \
+  seaborn \
+  scipy \
+  biopython \
+  -y
+
+
+
 ENV_NAME="${ENV_NAME:-PPI}"
 PY_VERSION="${PY_VERSION:-3.9}"
 FOLDX_DIR="${FOLDX_DIR:-$HOME/software/foldx}"
