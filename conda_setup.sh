@@ -60,7 +60,7 @@ log_step "Installing MutateX and Python dependencies"
 pip install --upgrade pip
 pip install \
 	git+https://github.com/ELELAB/mutatex.git \
-	pyyaml biopython pandas numpy scipy matplotlib
+	pyyaml
 
 log_step "Configuring FoldX"
 mkdir -p "$FOLDX_DIR"
