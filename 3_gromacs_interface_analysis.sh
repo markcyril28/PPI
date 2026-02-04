@@ -38,14 +38,8 @@ source "${SCRIPT_DIR}/modules/gromacs_common.sh"
 # Input directory base path
 INPUTS_DIR="/mnt/local3.5tb/home/mcmercado/PPI/inputs"
 
-# List of PDB files to process (comment/uncomment as needed)
+# List of PDB files to process 
 PDB_FILES=(
-    # SmelGRF-GIF structures
-    #"${INPUTS_DIR}/SmelGRF-GIF/fold_1_x_1_model_0.pdb"
-    #"${INPUTS_DIR}/SmelGRF-GIF/fold_2_x_1_model_0.pdb"
-    #"${INPUTS_DIR}/SmelGRF-GIF/fold_recruitment_of_smelgif_to_swi_model_0.pdb"
-    #"${INPUTS_DIR}/SmelGRF-GIF/fold_recruitment_of_smelgif_to_swi_model_0_model0_checked.pdb"
-    
     # SmelDMP structures
     "${INPUTS_DIR}/SmelDMP/SmelDMP01.730_SmelHAP2.pdb"
     "${INPUTS_DIR}/SmelDMP/SmelDMP01.990_SmelHAP2.pdb"

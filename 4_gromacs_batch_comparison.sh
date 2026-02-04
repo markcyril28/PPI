@@ -36,7 +36,6 @@ EM_STEPS=2000
 BOX_DISTANCE=0.8
 BOX_TYPE=cubic
 
-# Source common functions and configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/modules/gromacs_common.sh"
 

@@ -92,18 +92,10 @@ esac
 # Configuration
 #------------------------------------------------------------------------------
 
-# Input PDB files - Comment/uncomment to select which structures to compare
-# All uncommented files will be processed and compared against each other
 INPUT_BASE="/mnt/local3.5tb/home/mcmercado/PPI/inputs"
 
-# Structure list - uncomment the files you want to compare
 # (minimum 2 structures required)
 PDB_LIST=(
-    # SmelGRF-GIF files:
-    #"${INPUT_BASE}/SmelGRF-GIF/fold_1_x_1_model_0.pdb"
-    #"${INPUT_BASE}/SmelGRF-GIF/fold_2_x_1_model_0.pdb"
-    #"${INPUT_BASE}/SmelGRF-GIF/fold_recruitment_of_smelgif_to_swi_model_0.pdb"
-    
     # SmelDMP files:
     "${INPUT_BASE}/SmelDMP/SmelDMP01.730_SmelHAP2.pdb"
     "${INPUT_BASE}/SmelDMP/SmelDMP01.990_SmelHAP2.pdb"

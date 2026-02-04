@@ -13,27 +13,34 @@ set -e
 #######################################################################
 
 #------------------------------------------------------------------------------
-# CONFIGURATION
+# IMPORTANT PARAMETERS - Modify these as needed
 #------------------------------------------------------------------------------
 
 # Override existing results (true) or skip if already processed (false)
 OVERRIDE_EXISTING=false
 
-# Maximum threads to use for GROMACS
-MAX_THREADS=32
+# GROMACS simulation settings
+BOX_DISTANCE=1.0        # Distance from protein to box edge (nm)
+EM_STEPS=10000          # Energy minimization steps
+MAX_THREADS=32          # Maximum threads for GROMACS
+NTHREADS=$MAX_THREADS
 
-# Input PDB files - Comment/uncomment to select which structures to compare
-# All uncommented files will be processed and compared against each other
+#------------------------------------------------------------------------------
+# INPUT/OUTPUT PATHS
+#------------------------------------------------------------------------------
+
+# Input PDB files base directory
 INPUT_BASE="/mnt/local3.5tb/home/mcmercado/PPI/inputs"
 
-# Structure list - uncomment the files you want to compare
+# Output base directory
+OUTPUT_BASE="${1:-/mnt/local3.5tb/home/mcmercado/PPI/results_gromacs}"
+
+#------------------------------------------------------------------------------
+# STRUCTURE LIST - Comment/uncomment to select which structures to compare
+#------------------------------------------------------------------------------
+
 # (minimum 2 structures required)
 PDB_LIST=(
-    # SmelGRF-GIF files:
-    #"${INPUT_BASE}/SmelGRF-GIF/fold_1_x_1_model_0.pdb"
-    #"${INPUT_BASE}/SmelGRF-GIF/fold_2_x_1_model_0.pdb"
-    #"${INPUT_BASE}/SmelGRF-GIF/fold_recruitment_of_smelgif_to_swi_model_0.pdb"
-    
     # SmelDMP files:
     "${INPUT_BASE}/SmelDMP/SmelDMP01.730_SmelHAP2.pdb"
     "${INPUT_BASE}/SmelDMP/SmelDMP01.990_SmelHAP2.pdb"
@@ -44,8 +51,9 @@ PDB_LIST=(
     #"${INPUT_BASE}/SmelDMP/SmelDMP12_SmelHAP2.pdb"
 )
 
-# Output base directory
-OUTPUT_BASE="${1:-/mnt/local3.5tb/home/mcmercado/PPI/results_gromacs}"
+#------------------------------------------------------------------------------
+# DERIVED CONFIGURATION 
+#------------------------------------------------------------------------------
 
 # Generate dynamic output folder name based on structures being compared
 generate_output_dir_name() {
@@ -62,21 +70,15 @@ generate_output_dir_name() {
     echo "${OUTPUT_BASE}/1_quick_stability/${joined}"
 }
 
-# Set OUTPUT_DIR dynamically
+
 OUTPUT_DIR=$(generate_output_dir_name)
 
-# Validate we have at least 2 structures
+
 if [ ${#PDB_LIST[@]} -lt 2 ]; then
     echo "ERROR: At least 2 structures must be uncommented in PDB_LIST"
     exit 1
 fi
 
-# GROMACS settings (override defaults)
-BOX_DISTANCE=1.0
-EM_STEPS=10000
-NTHREADS=$MAX_THREADS
-
-# Source common functions and configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/modules/gromacs_common.sh"
 
