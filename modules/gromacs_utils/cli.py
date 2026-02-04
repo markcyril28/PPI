@@ -122,22 +122,32 @@ def cmd_extract_metrics(args):
         if mindist:
             metrics['min_distance'] = mindist[-1] if len(mindist) > 1 else mindist[0]
     
-    # Save JSON
-    output_json = workdir / 'metrics.json'
-    with open(output_json, 'w') as f:
-        json.dump(metrics, f, indent=2)
+    # Determine output file (default to metrics.json for JSON)
+    output_file = workdir / args.output if args.output else workdir / 'metrics.json'
     
-    # Save text summary
-    output_txt = workdir / args.output if args.output else workdir / 'metrics.txt'
-    with open(output_txt, 'w') as f:
-        f.write("Structure Metrics\n")
-        f.write("=" * 40 + "\n")
-        for key, value in metrics.items():
-            if value is not None and key != 'status':
-                if isinstance(value, float):
-                    f.write(f"{key}: {value:.4f}\n")
-                else:
-                    f.write(f"{key}: {value}\n")
+    # Check if user wants JSON or text format
+    if str(output_file).endswith('.json'):
+        # Save JSON
+        with open(output_file, 'w') as f:
+            json.dump(metrics, f, indent=2)
+        print(f"Saved JSON metrics to: {output_file}")
+    else:
+        # Save text summary
+        with open(output_file, 'w') as f:
+            f.write("Structure Metrics\n")
+            f.write("=" * 40 + "\n")
+            for key, value in metrics.items():
+                if value is not None and key != 'status':
+                    if isinstance(value, float):
+                        f.write(f"{key}: {value:.4f}\n")
+                    else:
+                        f.write(f"{key}: {value}\n")
+        print(f"Saved text metrics to: {output_file}")
+        
+        # Also save JSON version alongside text
+        json_file = output_file.parent / 'metrics.json'
+        with open(json_file, 'w') as f:
+            json.dump(metrics, f, indent=2)
     
     # Print summary
     if metrics['potential'] is not None:

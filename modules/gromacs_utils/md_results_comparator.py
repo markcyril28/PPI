@@ -238,6 +238,291 @@ def generate_md_comparison_plots(
     return generated_plots
 
 
+def generate_multi_structure_md_plots(
+    workdir: str,
+    pdb_list: List[str],
+    struct_dirs: List[str] = None
+) -> List[str]:
+    """
+    Generate combined radar plot and ranking for multiple MD simulation structures.
+    
+    Args:
+        workdir: Working directory containing structure subdirectories
+        pdb_list: List of PDB file paths
+        struct_dirs: Optional list of structure directory names (default: structure_1, structure_2, ...)
+        
+    Returns:
+        List of generated plot file paths
+    """
+    generated_plots = []
+    plots_dir = os.path.join(workdir, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    if struct_dirs is None:
+        struct_dirs = [f"structure_{i+1}" for i in range(len(pdb_list))]
+    
+    # Collect metrics from all structures
+    all_metrics = []
+    names = []
+    
+    for i, (pdb, struct_dir) in enumerate(zip(pdb_list, struct_dirs)):
+        metrics = collect_all_metrics(workdir, struct_dir)
+        if metrics:
+            all_metrics.append(metrics)
+            # Create short name from PDB
+            basename = os.path.basename(pdb).replace('.pdb', '')
+            short_name = basename[:20] + "..." if len(basename) > 20 else basename
+            names.append(f"S{i+1}: {short_name}")
+        else:
+            print(f"  Warning: No metrics found for {struct_dir}")
+    
+    if len(all_metrics) < 2:
+        print("  Not enough structures with metrics for combined plot")
+        return generated_plots
+    
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except ImportError:
+        print("  matplotlib not available, skipping combined plots")
+        return generated_plots
+    
+    # Metrics to include in radar plot (MD-specific)
+    radar_metrics = ['rmsd_mean', 'hbonds_mean', 'mindist_mean', 'total_ie_mean', 'rg_mean']
+    
+    # Find metrics available in all structures
+    available_metrics = []
+    for key in radar_metrics:
+        if all(key in m and m[key] is not None for m in all_metrics):
+            available_metrics.append(key)
+    
+    # Fall back to other common metrics if MD-specific ones not available
+    if len(available_metrics) < 3:
+        fallback_metrics = ['potential', 'hbonds', 'contacts', 'min_distance', 'sasa']
+        for key in fallback_metrics:
+            if key not in available_metrics:
+                if all(key in m and m[key] is not None for m in all_metrics):
+                    available_metrics.append(key)
+    
+    if len(available_metrics) < 3:
+        print(f"  Not enough common metrics for radar plot (found: {available_metrics})")
+        return generated_plots
+    
+    # Normalize metrics for radar plot
+    normalized_data = []
+    labels = []
+    
+    for key in available_metrics:
+        info = METRIC_DESCRIPTIONS.get(key, (key, '', 'context', ''))
+        labels.append(info[0])
+        
+        values = [m[key] for m in all_metrics]
+        min_val = min(values)
+        max_val = max(values)
+        range_val = max_val - min_val if max_val != min_val else 1
+        
+        better = info[2]
+        
+        # Normalize to 0-1, where 1 is "better"
+        norm_values = []
+        for v in values:
+            normalized = (v - min_val) / range_val
+            # Invert if lower is better
+            if better == 'lower':
+                normalized = 1 - normalized
+            norm_values.append(normalized)
+        
+        normalized_data.append(norm_values)
+    
+    # Transpose for per-structure data
+    per_structure_data = list(zip(*normalized_data))
+    
+    # Generate colors
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_metrics)))
+    
+    # 1. Combined Radar Plot
+    fig, ax = plt.subplots(figsize=(12, 10), subplot_kw=dict(projection='polar'))
+    
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    angles += angles[:1]  # Complete the loop
+    
+    for i, (data, name, color) in enumerate(zip(per_structure_data, names, colors)):
+        data_closed = list(data) + [data[0]]  # Close the polygon
+        ax.plot(angles, data_closed, 'o-', linewidth=2, label=name, color=color)
+        ax.fill(angles, data_closed, alpha=0.15, color=color)
+    
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, size=9)
+    ax.set_title(f'Multi-Structure MD Stability Comparison\n({len(all_metrics)} structures, outer = better)', 
+                 pad=20, fontsize=14, fontweight='bold')
+    ax.legend(loc='upper right', bbox_to_anchor=(1.35, 1.0), fontsize=9)
+    ax.set_ylim(0, 1)
+    
+    plt.tight_layout()
+    radar_path = os.path.join(plots_dir, "md_combined_radar.png")
+    plt.savefig(radar_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    generated_plots.append(radar_path)
+    print(f"  Generated: {radar_path}")
+    
+    # 2. Stacked bar chart for ranking
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # Calculate "score" for each structure (sum of normalized values)
+    scores = [sum(data) for data in per_structure_data]
+    
+    # Sort structures by score
+    sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+    sorted_names = [names[i] for i in sorted_indices]
+    sorted_scores = [scores[i] for i in sorted_indices]
+    sorted_colors = [colors[i] for i in sorted_indices]
+    
+    # Create stacked bars showing contribution from each metric
+    bar_width = 0.6
+    y_pos = np.arange(len(sorted_names))
+    
+    # Stack the metrics
+    bottom = np.zeros(len(sorted_names))
+    metric_colors = plt.cm.Set2(np.linspace(0, 1, len(labels)))
+    
+    for j, (label, mc) in enumerate(zip(labels, metric_colors)):
+        metric_values = [per_structure_data[sorted_indices[i]][j] for i in range(len(sorted_names))]
+        ax.barh(y_pos, metric_values, bar_width, left=bottom, label=label, color=mc, edgecolor='white')
+        bottom += metric_values
+    
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(sorted_names)
+    ax.invert_yaxis()  # Best at top
+    ax.set_xlabel('Combined Normalized Score (higher = better)', fontsize=12)
+    ax.set_title('MD Simulation Structure Ranking\n(Stacked contribution from each metric)', 
+                 fontsize=14, fontweight='bold')
+    ax.legend(loc='lower right', fontsize=9)
+    
+    # Add total score labels
+    for i, (name, score) in enumerate(zip(sorted_names, sorted_scores)):
+        ax.text(score + 0.05, i, f'{score:.2f}', va='center', fontsize=10, fontweight='bold')
+    
+    # Mark the winner
+    ax.annotate('★ BEST', xy=(sorted_scores[0], 0), fontsize=12, fontweight='bold',
+                color='green', va='center', ha='left',
+                xytext=(sorted_scores[0] + 0.3, 0))
+    
+    plt.tight_layout()
+    ranking_path = os.path.join(plots_dir, "md_combined_ranking.png")
+    plt.savefig(ranking_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    generated_plots.append(ranking_path)
+    print(f"  Generated: {ranking_path}")
+    
+    # 3. Individual metric comparison bars
+    n_metrics = len(available_metrics)
+    fig, axes = plt.subplots(n_metrics, 1, figsize=(14, 3 * n_metrics))
+    if n_metrics == 1:
+        axes = [axes]
+    
+    for ax, key in zip(axes, available_metrics):
+        info = METRIC_DESCRIPTIONS.get(key, (key, '', 'context', ''))
+        display_name = info[0]
+        unit = info[1]
+        better = info[2]
+        
+        values = [m[key] for m in all_metrics]
+        
+        # Determine best value
+        if better == 'lower':
+            best_idx = values.index(min(values))
+        elif better == 'higher':
+            best_idx = values.index(max(values))
+        else:
+            best_idx = -1
+        
+        bar_colors = ['green' if i == best_idx else colors[i] for i in range(len(values))]
+        
+        bars = ax.barh(range(len(names)), values, color=bar_colors)
+        ax.set_yticks(range(len(names)))
+        ax.set_yticklabels(names)
+        ax.set_xlabel(f'{display_name} ({unit})' if unit else display_name)
+        ax.set_title(f'{display_name} - {"Lower" if better == "lower" else "Higher" if better == "higher" else "Context"} is better')
+        
+        # Add value labels
+        for bar, val in zip(bars, values):
+            ax.text(bar.get_width() + 0.01 * max(abs(v) for v in values), 
+                    bar.get_y() + bar.get_height()/2,
+                    f'{val:.3f}', va='center', fontsize=9)
+    
+    plt.tight_layout()
+    metrics_path = os.path.join(plots_dir, "md_combined_metrics.png")
+    plt.savefig(metrics_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    generated_plots.append(metrics_path)
+    print(f"  Generated: {metrics_path}")
+    
+    # Generate summary report
+    summary_path = os.path.join(workdir, "md_comparison_summary.txt")
+    with open(summary_path, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write(" MULTI-STRUCTURE MD STABILITY COMPARISON SUMMARY\n")
+        f.write("=" * 80 + "\n\n")
+        f.write(f"  Structures compared: {len(all_metrics)}\n")
+        f.write(f"  Metrics analyzed: {', '.join(labels)}\n\n")
+        
+        f.write("-" * 80 + "\n")
+        f.write(" OVERALL RANKING (by combined normalized score)\n")
+        f.write("-" * 80 + "\n\n")
+        
+        for rank, (idx, score) in enumerate(zip(sorted_indices, sorted_scores), 1):
+            marker = "★" if rank == 1 else " "
+            f.write(f"  {marker} Rank {rank}: {names[idx]}\n")
+            f.write(f"       Combined Score: {score:.3f}\n")
+            f.write(f"       PDB: {os.path.basename(pdb_list[idx])}\n\n")
+        
+        f.write("-" * 80 + "\n")
+        f.write(" WINNER ANALYSIS\n")
+        f.write("-" * 80 + "\n\n")
+        
+        winner_idx = sorted_indices[0]
+        f.write(f"  ╔══════════════════════════════════════════════════════════════════════╗\n")
+        f.write(f"  ║  WINNER: {names[winner_idx]:<60}║\n")
+        f.write(f"  ╚══════════════════════════════════════════════════════════════════════╝\n\n")
+        
+        f.write(f"  The winning structure shows the best combined performance across\n")
+        f.write(f"  {len(available_metrics)} stability metrics from MD simulation analysis.\n\n")
+        
+        f.write("  Metric breakdown for winner:\n")
+        for j, key in enumerate(available_metrics):
+            info = METRIC_DESCRIPTIONS.get(key, (key, '', 'context', ''))
+            val = all_metrics[winner_idx][key]
+            f.write(f"    • {info[0]}: {val:.4f} {info[1]}\n")
+        
+        f.write("\n")
+        f.write("-" * 80 + "\n")
+        f.write(" INTERPRETATION GUIDE\n")
+        f.write("-" * 80 + "\n")
+        f.write("""
+  This ranking evaluates protein-protein interaction stability based on
+  molecular dynamics simulation results. Higher combined scores indicate:
+
+  • More stable protein complex during simulation (lower RMSD)
+  • Stronger interfacial hydrogen bonding (higher H-bonds)  
+  • Tighter interface packing (lower minimum distance)
+  • More favorable interaction energies (more negative IE)
+  • Consistent complex shape (stable radius of gyration)
+
+  NOTE: For definitive binding affinity predictions, consider:
+  - Longer MD simulations (100+ ns)
+  - MM-PBSA/MM-GBSA free energy calculations
+  - Multiple independent simulation replicas
+  - Experimental validation (ITC, SPR, etc.)
+""")
+        f.write("=" * 80 + "\n")
+    
+    print(f"  Generated: {summary_path}")
+    
+    return generated_plots
+
+
 def compare_md_results(
     workdir: str,
     pdb1_path: str,
@@ -441,14 +726,20 @@ def compare_md_results(
 def main():
     """Command-line interface for MD results comparison."""
     parser = argparse.ArgumentParser(
-        description='Compare MD simulation stability results between two structures'
+        description='Compare MD simulation stability results between structures'
     )
     parser.add_argument('--workdir', required=True,
                        help='Base working directory')
-    parser.add_argument('--pdb1', required=True,
-                       help='Path to first PDB file')
-    parser.add_argument('--pdb2', required=True,
-                       help='Path to second PDB file')
+    parser.add_argument('--multi', action='store_true',
+                       help='Multi-structure comparison mode (generates radar plot and ranking)')
+    parser.add_argument('--pdb-list', nargs='+',
+                       help='List of PDB file paths (for --multi mode)')
+    parser.add_argument('--struct-dirs', nargs='+',
+                       help='List of structure directory names (for --multi mode)')
+    parser.add_argument('--pdb1',
+                       help='Path to first PDB file (pairwise mode)')
+    parser.add_argument('--pdb2',
+                       help='Path to second PDB file (pairwise mode)')
     parser.add_argument('--struct1-dir', default='structure_1',
                        help='Subdirectory for structure 1')
     parser.add_argument('--struct2-dir', default='structure_2',
@@ -458,14 +749,31 @@ def main():
     
     args = parser.parse_args()
     
-    compare_md_results(
-        args.workdir,
-        args.pdb1,
-        args.pdb2,
-        args.struct1_dir,
-        args.struct2_dir,
-        args.output
-    )
+    if args.multi:
+        # Multi-structure comparison mode
+        if not args.pdb_list:
+            parser.error("--pdb-list is required for --multi mode")
+        
+        pdb_list = args.pdb_list
+        struct_dirs = args.struct_dirs if args.struct_dirs else [f"structure_{i+1}" for i in range(len(pdb_list))]
+        
+        print(f"  Multi-structure MD comparison: {len(pdb_list)} structures")
+        plots = generate_multi_structure_md_plots(args.workdir, pdb_list, struct_dirs)
+        if plots:
+            print(f"  Generated {len(plots)} plots")
+    else:
+        # Pairwise comparison mode
+        if not args.pdb1 or not args.pdb2:
+            parser.error("--pdb1 and --pdb2 are required for pairwise comparison")
+        
+        compare_md_results(
+            args.workdir,
+            args.pdb1,
+            args.pdb2,
+            args.struct1_dir,
+            args.struct2_dir,
+            args.output
+        )
 
 
 if __name__ == '__main__':

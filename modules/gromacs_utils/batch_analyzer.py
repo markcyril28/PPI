@@ -101,17 +101,26 @@ def collect_structure_metrics(struct_dir: Path) -> StructureMetrics:
     # Check for existing metrics.json
     metrics_file = struct_dir / 'metrics.json'
     if metrics_file.exists():
-        with open(metrics_file, 'r') as f:
-            data = json.load(f)
-            metrics.potential = data.get('potential')
-            metrics.gyration = data.get('gyration')
-            metrics.sasa = data.get('sasa')
-            metrics.hbonds = data.get('hbonds')
-            metrics.contacts = data.get('contacts')
-            metrics.min_distance = data.get('min_distance')
-            metrics.bsa = data.get('bsa')
-            metrics.status = data.get('status', 'OK')
-            return metrics
+        try:
+            with open(metrics_file, 'r') as f:
+                content = f.read().strip()
+                if not content:
+                    print(f"  Warning: Empty metrics.json in {struct_dir.name}, parsing XVG files instead")
+                else:
+                    data = json.loads(content)
+                    metrics.potential = data.get('potential')
+                    metrics.gyration = data.get('gyration')
+                    metrics.sasa = data.get('sasa')
+                    metrics.hbonds = data.get('hbonds')
+                    metrics.contacts = data.get('contacts')
+                    metrics.min_distance = data.get('min_distance')
+                    metrics.bsa = data.get('bsa')
+                    metrics.status = data.get('status', 'OK')
+                    return metrics
+        except json.JSONDecodeError as e:
+            print(f"  Warning: Invalid JSON in {metrics_file}: {e}, parsing XVG files instead")
+        except Exception as e:
+            print(f"  Warning: Error reading {metrics_file}: {e}, parsing XVG files instead")
     
     # Parse individual XVG files
     energy = parse_xvg_last(struct_dir / 'energy.xvg')
@@ -616,6 +625,134 @@ def generate_batch_plots(results: List[StructureMetrics], output_dir: Path) -> L
         plt.savefig(podium_plot, dpi=150)
         plt.close()
         generated_plots.append(str(podium_plot))
+    
+    # 4. Radar/Spider plot for multi-metric comparison
+    if len(results) >= 2:
+        # Collect metrics for radar plot
+        radar_metrics = ['potential', 'gyration', 'sasa', 'hbonds', 'contacts', 'min_distance']
+        available_metrics = []
+        
+        for metric in radar_metrics:
+            values = [getattr(r, metric, None) for r in results]
+            if any(v is not None for v in values):
+                available_metrics.append(metric)
+        
+        if len(available_metrics) >= 3:
+            # Prepare normalized data
+            normalized_data = []
+            labels = []
+            
+            for metric in available_metrics:
+                info = BATCH_METRIC_EXPLANATIONS.get(metric, {'name': metric, 'better': 'context'})
+                labels.append(info['name'])
+                
+                values = [getattr(r, metric, None) for r in results]
+                # Replace None with median
+                valid_values = [v for v in values if v is not None]
+                if not valid_values:
+                    continue
+                    
+                median_val = sorted(valid_values)[len(valid_values)//2]
+                values = [v if v is not None else median_val for v in values]
+                
+                min_val = min(values)
+                max_val = max(values)
+                range_val = max_val - min_val if max_val != min_val else 1
+                
+                better = info.get('better', 'context')
+                
+                # Normalize to 0-1, where 1 is "better"
+                norm_values = []
+                for v in values:
+                    normalized = (v - min_val) / range_val
+                    # Invert if lower is better
+                    if better == 'lower':
+                        normalized = 1 - normalized
+                    norm_values.append(normalized)
+                
+                normalized_data.append(norm_values)
+            
+            if normalized_data:
+                # Transpose for per-structure data
+                per_structure_data = list(zip(*normalized_data))
+                
+                # Generate colors
+                colors = plt.cm.tab10(np.linspace(0, 1, len(results)))
+                
+                # Limit to top structures for readability
+                n_show = min(10, len(results))
+                
+                # Radar Plot
+                fig, ax = plt.subplots(figsize=(12, 10), subplot_kw=dict(projection='polar'))
+                
+                angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+                angles += angles[:1]  # Complete the loop
+                
+                for i in range(n_show):
+                    data = per_structure_data[i]
+                    data_closed = list(data) + [data[0]]  # Close the polygon
+                    name = names[i]
+                    ax.plot(angles, data_closed, 'o-', linewidth=2, label=f"S{i+1}: {name}", color=colors[i])
+                    ax.fill(angles, data_closed, alpha=0.1, color=colors[i])
+                
+                ax.set_xticks(angles[:-1])
+                ax.set_xticklabels(labels, size=9)
+                ax.set_title(f'Batch Stability Comparison - Radar Plot\n({n_show} structures, outer = better)', 
+                             pad=20, fontsize=14, fontweight='bold')
+                ax.legend(loc='upper right', bbox_to_anchor=(1.35, 1.0), fontsize=8)
+                ax.set_ylim(0, 1)
+                
+                plt.tight_layout()
+                radar_plot = plots_dir / 'batch_radar.png'
+                plt.savefig(radar_plot, dpi=150, bbox_inches='tight')
+                plt.close()
+                generated_plots.append(str(radar_plot))
+                
+                # 5. Combined Ranking Stacked Bar Chart
+                fig, ax = plt.subplots(figsize=(14, max(8, n_show * 0.5)))
+                
+                # Calculate combined score for each structure
+                scores = [sum(data) for data in per_structure_data[:n_show]]
+                
+                # Sort by score
+                sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+                sorted_names = [f"S{sorted_indices[i]+1}: {names[sorted_indices[i]]}" for i in range(len(sorted_indices))]
+                sorted_scores = [scores[i] for i in sorted_indices]
+                
+                # Create stacked bars
+                bar_width = 0.6
+                y_pos = np.arange(len(sorted_names))
+                
+                bottom = np.zeros(len(sorted_names))
+                metric_colors = plt.cm.Set2(np.linspace(0, 1, len(labels)))
+                
+                for j, (label, mc) in enumerate(zip(labels, metric_colors)):
+                    metric_values = [per_structure_data[sorted_indices[i]][j] for i in range(len(sorted_names))]
+                    ax.barh(y_pos, metric_values, bar_width, left=bottom, label=label, color=mc, edgecolor='white')
+                    bottom += metric_values
+                
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(sorted_names)
+                ax.invert_yaxis()  # Best at top
+                ax.set_xlabel('Combined Normalized Score (higher = better)', fontsize=12)
+                ax.set_title('Batch Structure Ranking\n(Stacked contribution from each metric)', 
+                             fontsize=14, fontweight='bold')
+                ax.legend(loc='lower right', fontsize=9)
+                
+                # Add total score labels
+                for i, score in enumerate(sorted_scores):
+                    ax.text(score + 0.05, i, f'{score:.2f}', va='center', fontsize=10, fontweight='bold')
+                
+                # Mark the winner
+                ax.annotate('★ BEST', xy=(sorted_scores[0], 0), fontsize=12, fontweight='bold',
+                            color='green', va='center', ha='left',
+                            xytext=(sorted_scores[0] + 0.3, 0))
+                
+                plt.tight_layout()
+                ranking_plot = plots_dir / 'batch_combined_ranking.png'
+                plt.savefig(ranking_plot, dpi=150, bbox_inches='tight')
+                plt.close()
+                generated_plots.append(str(ranking_plot))
     
     return generated_plots
 
