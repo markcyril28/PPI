@@ -569,6 +569,25 @@ for key, val in data.items():
                 --struct1-dir "structure_1" \
                 --struct2-dir "structure_2" 2>&1 || true
         fi
+        
+        # Generate combined multi-structure comparison (radar plot, ranking) for 3+ structures
+        if [ $num_structs -gt 2 ]; then
+            log "Generating combined multi-structure comparison plots..."
+            
+            # Build PDB list and structure directory arguments
+            local pdb_args=""
+            local struct_args=""
+            for i in "${!PDB_LIST[@]}"; do
+                pdb_args="$pdb_args ${PDB_LIST[$i]}"
+                struct_args="$struct_args structure_$((i+1))"
+            done
+            
+            python3 -m gromacs_utils.md_results_comparator \
+                --workdir "$WORKDIR" \
+                --multi \
+                --pdb-list $pdb_args \
+                --struct-dirs $struct_args 2>&1 || true
+        fi
     fi
     
     log "Comparison complete. Reports saved to $WORKDIR/"
@@ -756,10 +775,22 @@ main() {
         log "  - visualization/visualize_trajectory.pml"
         log "  - plots/*.png"
     fi
+    if [[ ${#PDB_LIST[@]} -gt 2 ]]; then
+        log ""
+        log "Multi-structure comparison plots:"
+        log "  - plots/md_combined_radar.png"
+        log "  - plots/md_combined_ranking.png"
+        log "  - plots/md_combined_metrics.png"
+        log "  - md_comparison_summary.txt"
+    fi
     
     # Show comparison summary
     echo ""
-    cat "$WORKDIR/md_comparison_report.txt" 2>/dev/null | head -60 || true
+    if [[ ${#PDB_LIST[@]} -gt 2 ]]; then
+        cat "$WORKDIR/md_comparison_summary.txt" 2>/dev/null | head -60 || cat "$WORKDIR/md_comparison_report.txt" 2>/dev/null | head -60 || true
+    else
+        cat "$WORKDIR/md_comparison_report.txt" 2>/dev/null | head -60 || true
+    fi
 }
 
 main "$@"

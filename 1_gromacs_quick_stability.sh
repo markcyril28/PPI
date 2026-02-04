@@ -17,7 +17,7 @@ set -e
 #------------------------------------------------------------------------------
 
 # Override existing results (true) or skip if already processed (false)
-OVERRIDE_EXISTING=true
+OVERRIDE_EXISTING=false
 
 # Maximum threads to use for GROMACS
 MAX_THREADS=32
@@ -38,10 +38,10 @@ PDB_LIST=(
     "${INPUT_BASE}/SmelDMP/SmelDMP01.730_SmelHAP2.pdb"
     "${INPUT_BASE}/SmelDMP/SmelDMP01.990_SmelHAP2.pdb"
     "${INPUT_BASE}/SmelDMP/SmelDMP02_SmelHAP2.pdb"
-    "${INPUT_BASE}/SmelDMP/SmelDMP04_SmelHAP2.pdb"
+    #"${INPUT_BASE}/SmelDMP/SmelDMP04_SmelHAP2.pdb"
     "${INPUT_BASE}/SmelDMP/SmelDMP10.200_SmelHAP2.pdb"
-    "${INPUT_BASE}/SmelDMP/SmelDMP10_550_560_SmelHAP2.pdb"
-    "${INPUT_BASE}/SmelDMP/SmelDMP12_SmelHAP2.pdb"
+    #"${INPUT_BASE}/SmelDMP/SmelDMP10_550_560_SmelHAP2.pdb"
+    #"${INPUT_BASE}/SmelDMP/SmelDMP12_SmelHAP2.pdb"
 )
 
 # Output base directory
